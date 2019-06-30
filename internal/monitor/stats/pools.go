@@ -66,17 +66,20 @@ type poolsRawResponse struct {
 			Free       int64 `json:"free"`
 		} `json:"hdd"`
 	} `json:"storageTotals"`
-	FTSMemoryQuotaMb   int64         `json:"ftsMemoryQuota,omitempty"`
-	IndexMemoryQuotaMb int64         `json:"indexMemoryQuota,omitempty"`
-	MemoryQuotaMb      int64         `json:"memoryQuota"`
-	Name               string        `json:"name"`
-	Alerts             []string      `json:"alerts"`
-	Nodes              []poolRawNode `json:"nodes"`
-	RebalanceStatus    string        `json:"rebalanceStatus"`
-	MaxBucketCount     int64         `json:"maxBucketCount"`
-	IndexStatusURL     string        `json:"indexStatusURI"`
-	ClusterName        string        `json:"clusterName"`
-	Balanced           bool          `json:"balanced"`
+	FTSMemoryQuotaMb   int64  `json:"ftsMemoryQuota,omitempty"`
+	IndexMemoryQuotaMb int64  `json:"indexMemoryQuota,omitempty"`
+	MemoryQuotaMb      int64  `json:"memoryQuota"`
+	Name               string `json:"name"`
+	Alerts             []struct {
+		Message    string `json:"msg"`
+		ServerTime string `json:"serverTime"`
+	} `json:"alerts"`
+	Nodes           []poolRawNode `json:"nodes"`
+	RebalanceStatus string        `json:"rebalanceStatus"`
+	MaxBucketCount  int64         `json:"maxBucketCount"`
+	IndexStatusURL  string        `json:"indexStatusURI"`
+	ClusterName     string        `json:"clusterName"`
+	Balanced        bool          `json:"balanced"`
 }
 
 type ClusterStats struct {
@@ -101,7 +104,10 @@ type ClusterStats struct {
 		Analytics int `json:"analytics"`
 	} `json:"servicesCount"`
 	Alerts struct {
-		Cluster    []string `json:"cluster"`
+		Cluster []struct {
+			Message    string `json:"msg"`
+			ServerTime string `json:"serverTime"`
+		} `json:"cluster"`
 		Calculated []string `json:"calculated"`
 	} `json:"alerts"`
 	Buckets []Bucket `json:"buckets"`
@@ -162,8 +168,8 @@ func summarizeNodes(sourceNodes []poolRawNode) nodesSummary {
 		}
 		nodes[i] = Node{
 			Hostname:          strings.Split(node.Hostname, ":")[0],
-			MemTotalMb:        node.MemoryTotalBytes / 1024,
-			MemFreeMb:         node.MemoryFree / 1024,
+			MemTotalMb:        node.MemoryTotalBytes / mbFromBytes,
+			MemFreeMb:         node.MemoryFree / mbFromBytes,
 			MemUsedPct:        1 - (float64(node.MemoryFree) / float64(node.MemoryTotalBytes)),
 			ClusterMembership: node.ClusterMembership,
 			Status:            node.Status,
@@ -238,7 +244,10 @@ func (p poolsRawResponse) toClusterStats() ClusterStats {
 		HdPctUsed:          float64(p.StorageTotals.HDD.Used / p.StorageTotals.HDD.Total),
 		GetHitRatio:        summarizedNodes.getHitRatio,
 		Alerts: struct {
-			Cluster    []string `json:"cluster"`
+			Cluster []struct {
+				Message    string `json:"msg"`
+				ServerTime string `json:"serverTime"`
+			} `json:"cluster"`
 			Calculated []string `json:"calculated"`
 		}{
 			p.Alerts, calculatedAlerts,
