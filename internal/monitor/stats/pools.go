@@ -272,8 +272,12 @@ func (c ClusterStats) String() string {
 	version := c.Nodes[0].Version
 	maxCPU := 0.0
 	maxMem := 0.0
-	totalAlerts := c.Alerts.Cluster
-	totalAlerts = append(totalAlerts, c.Alerts.Calculated...)
+	strtingifiedAlerts := make([]string, len(c.Alerts.Cluster))
+	for key, _ := range strtingifiedAlerts {
+		strtingifiedAlerts[key] = fmt.Sprintf("%s: %s", c.Alerts.Cluster[key].ServerTime, c.Alerts.Cluster[key].Message)
+	}
+	totalAlerts := c.Alerts.Calculated
+	totalAlerts = append(totalAlerts, strtingifiedAlerts...)
 	alertsCount := len(c.Alerts.Cluster) + len(c.Alerts.Calculated)
 	alerts := strings.Join(totalAlerts, "- %s\n")
 	for i, _ := range c.Nodes {
