@@ -14,7 +14,7 @@ const (
 	errCodeHTTPStatus = "[HTTP_STATUS]"
 )
 
-var roles = []string{"kv", "index", "query", "fts", "analytics"}
+var roles = []string{"kv", "index", "n1ql", "fts", "analytics"}
 
 type poolRawNode struct {
 	SystemStats struct {
@@ -219,7 +219,10 @@ func (p poolsRawResponse) toClusterStats() ClusterStats {
 	calculatedAlerts := []string{}
 	summarizedNodes := summarizeNodes(p.Nodes)
 	calculatedAlerts = append(calculatedAlerts, summarizedNodes.alerts...)
-
+	ramPctUsed := 0.0
+	if p.StorageTotals.RAM.Total > 0 {
+		ramPctUsed = float64(p.StorageTotals.RAM.Used / p.StorageTotals.RAM.Total)
+	}
 	return ClusterStats{
 		Name:               p.ClusterName,
 		Balanced:           p.Balanced,
@@ -229,7 +232,7 @@ func (p poolsRawResponse) toClusterStats() ClusterStats {
 		MemoryQuotaMb:      p.MemoryQuotaMb,
 		RAMTotal:           p.StorageTotals.RAM.Total,
 		RAMUsed:            p.StorageTotals.RAM.Used,
-		RAMPctUsed:         float64(p.StorageTotals.RAM.Used / p.StorageTotals.RAM.Total),
+		RAMPctUsed:         ramPctUsed,
 		HDTotal:            p.StorageTotals.HDD.Total,
 		HDUsed:             p.StorageTotals.HDD.Used,
 		HdPctUsed:          float64(p.StorageTotals.HDD.Used / p.StorageTotals.HDD.Total),
@@ -250,7 +253,7 @@ func (p poolsRawResponse) toClusterStats() ClusterStats {
 			Analytics int `json:"analytics"`
 		}{
 			KV: summarizedNodes.services["kv"], Index: summarizedNodes.services["index"],
-			Query: summarizedNodes.services["query"], FTS: summarizedNodes.services["fts"],
+			Query: summarizedNodes.services["n1ql"], FTS: summarizedNodes.services["fts"],
 			Analytics: summarizedNodes.services["analytics"],
 		},
 	}
@@ -260,7 +263,8 @@ func (c ClusterStats) String() string {
 	version := c.Nodes[0].Version
 	maxCPU := 0.0
 	maxMem := 0.0
-	totalAlerts := append(c.Alerts.Cluster, c.Alerts.Calculated...)
+	totalAlerts := c.Alerts.Cluster
+	totalAlerts = append(totalAlerts, c.Alerts.Calculated...)
 	alertsCount := len(c.Alerts.Cluster) + len(c.Alerts.Calculated)
 	alerts := strings.Join(totalAlerts, "- %s\n")
 	for i, _ := range c.Nodes {

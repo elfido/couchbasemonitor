@@ -6,6 +6,11 @@ var (
 	client = http.Client{}
 )
 
+const (
+	kbFromBytes = 1024
+	mbFromBytes = 1024 * 1024
+)
+
 type Auth struct {
 	Username string
 	Password string

@@ -43,7 +43,7 @@ type Bucket struct {
 	OpsPerSec     int     `json:"opsPerSec"`
 	DiskFetches   int     `json:"diskFetches"`
 	ItemCount     int     `json:"itemCount"`
-	MemUsed       int64   `json:"memUsed"`
+	MemUsedMb     int64   `json:"memUsedMb"`
 	QuotaPctUsed  float64 `json:"quotaPctUsed"`
 	DiskUsedMb    int64   `json:"diskUsedMb"`
 	RAMTotalMB    int     `json:"ramTotalMb"`
@@ -62,6 +62,7 @@ type bucketsChanResponse struct {
 }
 
 func (br bucketRaw) toBucketSumamry() Bucket {
+	freeRam := br.BasicStats.StorageTotals.RAM.Total - br.BasicStats.StorageTotals.RAM.Used
 	return Bucket{
 		Name:          br.Name,
 		BucketType:    br.BucketType,
@@ -69,12 +70,12 @@ func (br bucketRaw) toBucketSumamry() Bucket {
 		OpsPerSec:     br.BasicStats.OpsPerSec,
 		DiskFetches:   br.BasicStats.DiskFetches,
 		ItemCount:     br.BasicStats.ItemCount,
-		MemUsed:       br.BasicStats.MemUsed,
+		MemUsedMb:     br.BasicStats.MemUsed * mbFromBytes,
 		QuotaPctUsed:  br.BasicStats.QuotaPercentUsed,
 		DiskUsedMb:    br.BasicStats.DiskUsed,
-		RAMTotalMB:    0,
-		RAMUsedMB:     0,
-		RAMFreeMb:     0,
+		RAMTotalMB:    int(br.BasicStats.StorageTotals.RAM.Total * int64(mbFromBytes)),
+		RAMUsedMB:     int(br.BasicStats.StorageTotals.RAM.Used * int64(mbFromBytes)),
+		RAMFreeMb:     int(freeRam * int64(mbFromBytes)),
 		RAMUsedPct:    0,
 		HDDTotalMb:    0,
 		HDDUsedMb:     0,

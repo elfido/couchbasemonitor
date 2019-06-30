@@ -16,6 +16,11 @@ import (
 	"github.com/go-chi/chi"
 )
 
+const (
+	mimeType = "content-type"
+	appJson  = "application/json"
+)
+
 // ToDo:
 //  - Add prometheus metrics
 //  - Create docker file
@@ -106,6 +111,7 @@ func main() {
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		clusters := fullClusterStats.GetAll()
 		clustersBytes, _ := json.Marshal(clusters)
+		w.Header().Set(mimeType, appJson)
 		w.Write(clustersBytes)
 	})
 	http.ListenAndServe(":3000", r)
