@@ -31,6 +31,11 @@ type MonitorBuilder struct {
 	monitor Monitor
 }
 
+type ClusterInfo struct {
+	Stats stats.ClusterStats
+	Err   error
+}
+
 // NewMonitor creates a new stats scrapper
 func NewMonitor(hostname, name, username, password, protocol, port string) (MonitorBuilder, error) {
 	if hostname == "" {
@@ -80,12 +85,21 @@ func (b *MonitorBuilder) Build() *Monitor {
 	return &b.monitor
 }
 
-func (m *Monitor) Check() {
+func (m *Monitor) Check(responseChannel chan ClusterInfo) {
 	baseUrl := fmt.Sprintf("%s://%s", m.protocol, m.hosts[0])
 	auth := stats.Auth{m.username, m.password}
 	cluster, err := stats.GetPoolInfo(baseUrl, m.port, auth)
 	if err == nil {
 		fmt.Println(cluster)
+		responseChannel <- ClusterInfo{
+			Stats: cluster,
+			Err:   nil,
+		}
+	} else {
+		responseChannel <- ClusterInfo{
+			Stats: stats.ClusterStats{},
+			Err:   err,
+		}
 	}
 
 }

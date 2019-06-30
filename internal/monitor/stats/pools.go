@@ -14,6 +14,8 @@ const (
 	errCodeHTTPStatus = "[HTTP_STATUS]"
 )
 
+var roles = []string{"kv", "index", "query", "fts", "analytics"}
+
 type poolRawNode struct {
 	SystemStats struct {
 		CPUUtilizationRate float64 `json:"cpu_utilization_rate"`
@@ -91,7 +93,14 @@ type ClusterStats struct {
 	HDUsed             int64   `json:"hdUsed"`
 	HdPctUsed          float64 `json:"hdPctUsed"`
 	GetHitRatio        float64 `json:"getHitRatio"`
-	Alerts             struct {
+	AvailableServices  struct {
+		KV        int `json:"kv"`
+		Index     int `json:"index"`
+		Query     int `json:"query"`
+		FTS       int `json:"fts"`
+		Analytics int `json:"analytics"`
+	} `json:"servicesCount"`
+	Alerts struct {
 		Cluster    []string `json:"cluster"`
 		Calculated []string `json:"calculated"`
 	} `json:"alerts"`
@@ -120,12 +129,11 @@ type Node struct {
 	CPURate float64 `json:"cpuRate"`
 }
 
-type Bucket struct{}
-
 type nodesSummary struct {
 	nodes       []Node
 	alerts      []string
 	getHitRatio float64
+	services    map[string]int
 }
 
 func includes(options []string, lookFor string) bool {
@@ -144,10 +152,14 @@ func summarizeNodes(sourceNodes []poolRawNode) nodesSummary {
 	calculatedAlerts := []string{}
 	versions := make(map[string]int)
 	compatibility := make(map[int64]int)
+	services := make(map[string]int)
 	for i, node := range sourceNodes {
 		isKV := includes(node.Services, "kv")
 		versions[node.Version] = versions[node.Version] + 1
 		compatibility[node.ClusterCompatibility] = compatibility[node.ClusterCompatibility] + 1
+		for _, service := range node.Services {
+			services[service] += 1
+		}
 		nodes[i] = Node{
 			Hostname:          strings.Split(node.Hostname, ":")[0],
 			MemTotalMb:        node.MemoryTotalBytes / 1024,
@@ -199,6 +211,7 @@ func summarizeNodes(sourceNodes []poolRawNode) nodesSummary {
 		nodes:       nodes,
 		getHitRatio: getHitRatio,
 		alerts:      calculatedAlerts,
+		services:    services,
 	}
 }
 
@@ -229,6 +242,17 @@ func (p poolsRawResponse) toClusterStats() ClusterStats {
 		},
 		Buckets: nil,
 		Nodes:   summarizedNodes.nodes,
+		AvailableServices: struct {
+			KV        int `json:"kv"`
+			Index     int `json:"index"`
+			Query     int `json:"query"`
+			FTS       int `json:"fts"`
+			Analytics int `json:"analytics"`
+		}{
+			KV: summarizedNodes.services["kv"], Index: summarizedNodes.services["index"],
+			Query: summarizedNodes.services["query"], FTS: summarizedNodes.services["fts"],
+			Analytics: summarizedNodes.services["analytics"],
+		},
 	}
 }
 
@@ -237,7 +261,8 @@ func (c ClusterStats) String() string {
 	maxCPU := 0.0
 	maxMem := 0.0
 	totalAlerts := append(c.Alerts.Cluster, c.Alerts.Calculated...)
-	alerts := strings.Join(totalAlerts, "\n - ")
+	alertsCount := len(c.Alerts.Cluster) + len(c.Alerts.Calculated)
+	alerts := strings.Join(totalAlerts, "- %s\n")
 	for i, _ := range c.Nodes {
 		if c.Nodes[i].CPURate > maxCPU {
 			maxCPU = c.Nodes[i].CPURate
@@ -247,7 +272,15 @@ func (c ClusterStats) String() string {
 		}
 	}
 	maxMem *= 100
-	return fmt.Sprintf("%s - Version: %s\nNodes: %d\tMax CPU: %.1f\tMax Mem used: %.1f\tGet hit/miss ratio: %.1f\nAlerts:\n%s", c.Name, version, len(c.Nodes), maxCPU, maxMem, c.GetHitRatio, alerts)
+	buckets := make([]string, len(c.Buckets))
+	for i, bucket := range c.Buckets {
+		buckets[i] = bucket.Name
+	}
+	return fmt.Sprintf("%s - Version: %s\nNodes: %d\tMax CPU: %.1f\tMax Mem used: %.1f\tGet hit/miss ratio: %.1f"+
+		"\nBuckets: %s\n"+
+		"\nServices:\n- KV: %d"+
+		"\nAlerts (%d):\n%s", c.Name, version, len(c.Nodes), maxCPU, maxMem, c.GetHitRatio, strings.Join(buckets, ", "),
+		c.AvailableServices.KV, alertsCount, alerts)
 }
 
 func GetPoolInfo(baseUrl string, port string, auth Auth) (ClusterStats, error) {
@@ -259,6 +292,7 @@ func GetPoolInfo(baseUrl string, port string, auth Auth) (ClusterStats, error) {
 		return ClusterStats{}, err
 	}
 	if resp.StatusCode != 200 {
+		resp.Body.Close()
 		return ClusterStats{}, fmt.Errorf("%s invalid status pools API response code: %d", errCodeHTTPStatus,
 			resp.StatusCode)
 	}
@@ -267,6 +301,10 @@ func GetPoolInfo(baseUrl string, port string, auth Auth) (ClusterStats, error) {
 	decoder.Decode(&poolsResponse)
 	resp.Body.Close()
 	clusterStats := poolsResponse.toClusterStats()
+	bucketsChannel := make(chan bucketsChanResponse)
+	go getBuckets(baseUrl, port, auth, bucketsChannel)
 	// todo: fetch indices from remote url
+	bucketsResponse := <-bucketsChannel
+	clusterStats.Buckets = bucketsResponse.buckets
 	return clusterStats, nil
 }

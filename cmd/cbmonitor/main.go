@@ -3,15 +3,53 @@ package main
 import (
 	"cbmonitor/internal/config"
 	"cbmonitor/internal/monitor"
+	"cbmonitor/internal/monitor/stats"
+	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"sync"
 	"time"
+
+	"github.com/go-chi/chi"
 )
 
 // ToDo:
 //  - Add prometheus metrics
 //  - Create docker file
+
+// ClustersContainer keeps track of statistics of multiple clusters
+type ClustersContainer struct {
+	clusters map[string]stats.ClusterStats
+	mu       sync.RWMutex
+}
+
+func NewClustersContainer() ClustersContainer {
+	return ClustersContainer{
+		clusters: make(map[string]stats.ClusterStats),
+	}
+}
+
+// Add refreshes the information for a given cluster
+func (cc *ClustersContainer) Add(stats stats.ClusterStats) {
+	cc.mu.Lock()
+	cc.clusters[stats.Name] = stats
+	cc.mu.Unlock()
+}
+
+// GetAll returns the information of all clusters
+func (cc *ClustersContainer) GetAll() []stats.ClusterStats {
+	cc.mu.RLock()
+	all := make([]stats.ClusterStats, len(cc.clusters))
+	ndx := 0
+	for _, stats := range cc.clusters {
+		all[ndx] = stats
+	}
+	cc.mu.RUnlock()
+	return all
+}
 
 func exitOnError(message string, err error) {
 	if err != nil {
@@ -43,11 +81,32 @@ func main() {
 		monitors[i] = monitor.Build()
 	}
 
-	for {
-		log.Println("Processing")
-		for _, monitor := range monitors {
-			monitor.Check()
+	fullClusterStats := NewClustersContainer()
+	go func() {
+		for {
+			log.Println("Processing")
+			responses := make(chan monitor.ClusterInfo, len(monitors))
+			for _, monitor := range monitors {
+				monitor.Check(responses)
+			}
+			for i := 0; i < len(monitors); i++ {
+				resp := <-responses
+				if resp.Err == nil {
+					fmt.Println(resp.Stats)
+					fullClusterStats.Add(resp.Stats)
+				} else {
+					fmt.Println(resp.Err)
+				}
+			}
+			close(responses)
+			time.Sleep(*scrapInterval)
 		}
-		time.Sleep(*scrapInterval)
-	}
+	}()
+	r := chi.NewRouter()
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		clusters := fullClusterStats.GetAll()
+		clustersBytes, _ := json.Marshal(clusters)
+		w.Write(clustersBytes)
+	})
+	http.ListenAndServe(":3000", r)
 }
